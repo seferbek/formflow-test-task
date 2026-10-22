@@ -84,7 +84,12 @@ app.get('/api/forms/:id/responses', (req, res) => {
   const views = new Set(db.events.filter((x) => x.formId === form.id && x.type === 'view').map((x) => x.sessionId)).size;
   const starts = new Set(db.events.filter((x) => x.formId === form.id && x.type === 'start').map((x) => x.sessionId)).size;
   const completedSessions = new Set(submissions.map((x) => x.sessionId)).size;
-  res.json({ form, submissions, analytics: { views, starts, completed: completedSessions, completionRate: starts ? Math.round(completedSessions / starts * 100) : 0 } });
+  const fieldReach = form.fields.map((field) => ({
+    fieldId: field.id,
+    label: field.label,
+    reached: new Set(db.events.filter((x) => x.formId === form.id && x.type === 'field' && x.fieldId === field.id).map((x) => x.sessionId)).size
+  }));
+  res.json({ form, submissions, analytics: { views, starts, completed: completedSessions, completionRate: starts ? Math.round(completedSessions / starts * 100) : 0, fieldReach } });
 });
 
 app.get('/api/public/:slug', (req, res) => {
@@ -95,9 +100,10 @@ app.get('/api/public/:slug', (req, res) => {
 
 app.post('/api/public/:slug/event', (req, res) => {
   const db = readDb(); const form = db.forms.find((x) => x.slug === req.params.slug && x.published);
-  const type = req.body.type; const sessionId = safeText(req.body.sessionId, 100);
-  if (!form || !['view', 'start'].includes(type) || !sessionId) return res.sendStatus(204);
-  if (!db.events.some((x) => x.formId === form.id && x.type === type && x.sessionId === sessionId)) db.events.push({ formId: form.id, type, sessionId, at: now() });
+  const type = req.body.type; const sessionId = safeText(req.body.sessionId, 100); const fieldId = safeText(req.body.fieldId, 80);
+  if (!form || !['view', 'start', 'field'].includes(type) || !sessionId) return res.sendStatus(204);
+  if (type === 'field' && !form.fields.some((field) => field.id === fieldId)) return res.sendStatus(204);
+  if (!db.events.some((x) => x.formId === form.id && x.type === type && x.sessionId === sessionId && x.fieldId === fieldId)) db.events.push({ formId: form.id, type, fieldId, sessionId, at: now() });
   writeDb(db); res.sendStatus(204);
 });
 
